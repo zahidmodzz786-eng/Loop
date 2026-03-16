@@ -3,7 +3,7 @@ import os
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-import asyncio
+from telegram.constants import ParseMode
 
 # Enable logging
 logging.basicConfig(
@@ -86,66 +86,43 @@ async def send_main_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # Get chat_id and message objects
+    # Get chat_id
     if update.callback_query:
         chat_id = update.callback_query.message.chat_id
-        message = update.callback_query.message
-        # Answer callback query to remove loading state
         await update.callback_query.answer()
+        # Delete old message
+        try:
+            await update.callback_query.message.delete()
+        except:
+            pass
     else:
         chat_id = update.effective_chat.id
-        message = None
     
-    # Send or edit message
+    # Send new message
     try:
-        if bot_photo:
-            # If there's a photo
-            if message:
-                try:
-                    # Try to edit if it's a photo message
-                    await message.edit_media(
-                        media=InputMediaPhoto(media=bot_photo, caption=bot_message),
-                        reply_markup=reply_markup
-                    )
-                except:
-                    # If edit fails, delete and send new
-                    await message.delete()
-                    await context.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=bot_photo,
-                        caption=bot_message,
-                        reply_markup=reply_markup
-                    )
-            else:
-                # New message with photo
-                await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=bot_photo,
-                    caption=bot_message,
-                    reply_markup=reply_markup
-                )
+        if bot_photo and bot_photo.strip():
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=bot_photo,
+                caption=bot_message,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
         else:
-            # No photo - just text
-            if message:
-                await message.edit_text(
-                    text=bot_message,
-                    reply_markup=reply_markup
-                )
-            else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=bot_message,
-                    reply_markup=reply_markup
-                )
-    except Exception as e:
-        logger.error(f"Error sending message: {e}")
-        # Fallback to simple text message
-        if not message:
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=bot_message,
-                reply_markup=reply_markup
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
             )
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        # Fallback to simple text
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=bot_message,
+            reply_markup=reply_markup
+        )
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle button callback queries."""
@@ -178,7 +155,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text(
         "⚙️ *Admin Panel*\n\nSelect what you want to change:",
         reply_markup=reply_markup,
-        parse_mode='Markdown'
+        parse_mode=ParseMode.MARKDOWN
     )
 
 async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -196,35 +173,35 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data['admin_action'] = 'set_btn1_text'
         await query.edit_message_text(
             "📝 Send me the new text for *Button 1*:",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
     
     elif query.data == 'admin_btn2':
         context.user_data['admin_action'] = 'set_btn2_text'
         await query.edit_message_text(
             "📝 Send me the new text for *Button 2*:",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
     
     elif query.data == 'admin_continue':
         context.user_data['admin_action'] = 'set_continue_text'
         await query.edit_message_text(
             "🔄 Send me the new text for *Continue button*:",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
     
     elif query.data == 'admin_photo':
         context.user_data['admin_action'] = 'set_photo'
         await query.edit_message_text(
             "📷 Send me a new photo or a photo file_id:",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
     
     elif query.data == 'admin_text':
         context.user_data['admin_action'] = 'set_message'
         await query.edit_message_text(
             "✏️ Send me the new message text:",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
     
     elif query.data == 'admin_view':
@@ -243,11 +220,10 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(
             settings_text,
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
     
     elif query.data == 'admin_back':
-        # Recreate admin panel
         keyboard = [
             [InlineKeyboardButton("📝 Change Button 1", callback_data='admin_btn1')],
             [InlineKeyboardButton("📝 Change Button 2", callback_data='admin_btn2')],
@@ -261,7 +237,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(
             "⚙️ *Admin Panel*\n\nSelect what you want to change:",
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
     
     elif query.data == 'admin_close':
@@ -282,7 +258,7 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data['temp_btn1_text'] = text
         await update.message.reply_text(
             f"✅ Button 1 text set to: *{text}*\n\nNow send me the URL for Button 1:",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
     
     elif action == 'set_btn1_url':
@@ -292,7 +268,7 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.pop('admin_action', None)
         await update.message.reply_text(
             f"✅ Button 1 updated!\n\nText: *{get_setting('button1_text')}*\nURL: *{get_setting('button1_url')}*",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
         await admin_panel(update, context)
     
@@ -301,7 +277,7 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data['temp_btn2_text'] = text
         await update.message.reply_text(
             f"✅ Button 2 text set to: *{text}*\n\nNow send me the URL for Button 2:",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
     
     elif action == 'set_btn2_url':
@@ -311,7 +287,7 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.pop('admin_action', None)
         await update.message.reply_text(
             f"✅ Button 2 updated!\n\nText: *{get_setting('button2_text')}*\nURL: *{get_setting('button2_url')}*",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
         await admin_panel(update, context)
     
@@ -320,7 +296,7 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.pop('admin_action', None)
         await update.message.reply_text(
             f"✅ Continue button text updated to: *{text}*",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
         await admin_panel(update, context)
     
@@ -329,7 +305,7 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.pop('admin_action', None)
         await update.message.reply_text(
             f"✅ Message text updated!",
-            parse_mode='Markdown'
+            parse_mode=ParseMode.MARKDOWN
         )
         await admin_panel(update, context)
 

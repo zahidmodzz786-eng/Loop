@@ -86,64 +86,71 @@ async def send_main_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # Get chat_id
+    # Get chat_id and message objects
     if update.callback_query:
         chat_id = update.callback_query.message.chat_id
         message = update.callback_query.message
+        # Answer callback query to remove loading state
+        await update.callback_query.answer()
     else:
         chat_id = update.effective_chat.id
         message = None
     
-    # Send photo if available, otherwise just text
-    if bot_photo:
-        try:
+    # Send or edit message
+    try:
+        if bot_photo:
+            # If there's a photo
             if message:
-                await message.delete()
-            await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=bot_photo,
-                caption=bot_message,
-                reply_markup=reply_markup
-            )
-        except:
-            try:
-                if message:
+                try:
+                    # Try to edit if it's a photo message
+                    await message.edit_media(
+                        media=InputMediaPhoto(media=bot_photo, caption=bot_message),
+                        reply_markup=reply_markup
+                    )
+                except:
+                    # If edit fails, delete and send new
                     await message.delete()
+                    await context.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=bot_photo,
+                        caption=bot_message,
+                        reply_markup=reply_markup
+                    )
+            else:
+                # New message with photo
                 await context.bot.send_photo(
                     chat_id=chat_id,
                     photo=bot_photo,
                     caption=bot_message,
                     reply_markup=reply_markup
                 )
-            except:
-                if message:
-                    await message.edit_text(
-                        text=bot_message,
-                        reply_markup=reply_markup
-                    )
-                else:
-                    await update.message.reply_text(
-                        text=bot_message,
-                        reply_markup=reply_markup
-                    )
-    else:
-        if message:
-            await message.edit_text(
-                text=bot_message,
-                reply_markup=reply_markup
-            )
         else:
-            await update.message.reply_text(
+            # No photo - just text
+            if message:
+                await message.edit_text(
+                    text=bot_message,
+                    reply_markup=reply_markup
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=bot_message,
+                    reply_markup=reply_markup
+                )
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        # Fallback to simple text message
+        if not message:
+            await context.bot.send_message(
+                chat_id=chat_id,
                 text=bot_message,
                 reply_markup=reply_markup
             )
-    
-    if update.callback_query:
-        await update.callback_query.answer()
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle button callback queries."""
     query = update.callback_query
+    await query.answer()
     
     if query.data == 'continue':
         await send_main_message(update, context)
@@ -336,14 +343,15 @@ async def handle_admin_photo(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if update.message.photo:
         photo = update.message.photo[-1]
         update_setting('bot_photo', photo.file_id)
+        await update.message.reply_text("✅ Photo updated successfully!")
     elif update.message.text:
         update_setting('bot_photo', update.message.text)
+        await update.message.reply_text("✅ Photo URL/file_id saved successfully!")
     else:
         await update.message.reply_text("❌ Please send a photo or a valid file_id/URL.")
         return
     
     context.user_data.pop('admin_action', None)
-    await update.message.reply_text("✅ Photo updated successfully!")
     await admin_panel(update, context)
 
 def main() -> None:
@@ -360,7 +368,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.PHOTO, handle_admin_photo))
 
     # Start the Bot
-    print("Bot started! Press Ctrl+C to stop.")
+    print("Bot started successfully! Press Ctrl+C to stop.")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':

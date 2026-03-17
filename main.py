@@ -149,6 +149,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📝 Change Button 1", callback_data='admin_btn1')],
         [InlineKeyboardButton("📝 Change Button 2", callback_data='admin_btn2')],
         [InlineKeyboardButton("🔄 Change Continue", callback_data='admin_continue')],
+        [InlineKeyboardButton("📷 Change Photo", callback_data='admin_photo')],
         [InlineKeyboardButton("✏️ Change Message", callback_data='admin_text')],
         [InlineKeyboardButton("📊 Total Users", callback_data='admin_users')],
         [InlineKeyboardButton("📢 Broadcast Message", callback_data='admin_broadcast')],
@@ -183,6 +184,10 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['action'] = 'continue_text'
         await query.edit_message_text("🔄 Send new text for Continue button:")
     
+    elif query.data == 'admin_photo':
+        context.user_data['action'] = 'photo'
+        await query.edit_message_text("📷 Send me a new photo:")
+    
     elif query.data == 'admin_text':
         context.user_data['action'] = 'message'
         await query.edit_message_text("✏️ Send new message text:")
@@ -202,6 +207,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"*Button 2:* {get_setting('button2_text')}\n"
         text += f"*URL 2:* {get_setting('button2_url')}\n\n"
         text += f"*Continue:* {get_setting('continue_text')}\n\n"
+        text += f"*Photo:* {'✅ Set' if get_setting('bot_photo') else '❌ Not set'}\n\n"
         text += f"*Message:*\n{get_setting('bot_message')[:100]}..."
         await query.edit_message_text(text, parse_mode='Markdown')
     
@@ -216,45 +222,51 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     action = context.user_data['action']
-    text = update.message.text
     
     if action == 'btn1_text':
         context.user_data['action'] = 'btn1_url'
-        context.user_data['temp_text'] = text
-        await update.message.reply_text(f"✅ Button 1 text set to: *{text}*\n\nNow send URL:", parse_mode='Markdown')
+        context.user_data['temp_text'] = update.message.text
+        await update.message.reply_text(f"✅ Button 1 text set to: *{update.message.text}*\n\nNow send URL:", parse_mode='Markdown')
     
     elif action == 'btn1_url':
         update_setting('button1_text', context.user_data.get('temp_text', ''))
-        update_setting('button1_url', text)
+        update_setting('button1_url', update.message.text)
         context.user_data.clear()
         await update.message.reply_text("✅ Button 1 updated successfully!")
         await admin(update, context)
     
     elif action == 'btn2_text':
         context.user_data['action'] = 'btn2_url'
-        context.user_data['temp_text'] = text
-        await update.message.reply_text(f"✅ Button 2 text set to: *{text}*\n\nNow send URL:", parse_mode='Markdown')
+        context.user_data['temp_text'] = update.message.text
+        await update.message.reply_text(f"✅ Button 2 text set to: *{update.message.text}*\n\nNow send URL:", parse_mode='Markdown')
     
     elif action == 'btn2_url':
         update_setting('button2_text', context.user_data.get('temp_text', ''))
-        update_setting('button2_url', text)
+        update_setting('button2_url', update.message.text)
         context.user_data.clear()
         await update.message.reply_text("✅ Button 2 updated successfully!")
         await admin(update, context)
     
     elif action == 'continue_text':
-        update_setting('continue_text', text)
+        update_setting('continue_text', update.message.text)
         context.user_data.clear()
         await update.message.reply_text("✅ Continue button updated successfully!")
         await admin(update, context)
     
     elif action == 'message':
-        update_setting('bot_message', text)
+        update_setting('bot_message', update.message.text)
         context.user_data.clear()
         await update.message.reply_text("✅ Message updated successfully!")
         await admin(update, context)
     
+    elif action == 'photo':
+        update_setting('bot_photo', update.message.text)
+        context.user_data.clear()
+        await update.message.reply_text("✅ Photo URL/ID saved successfully!")
+        await admin(update, context)
+    
     elif action == 'broadcast':
+        text = update.message.text
         context.user_data.clear()
         await update.message.reply_text("📢 Broadcasting message to all users...")
         
@@ -272,6 +284,19 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text(f"✅ Broadcast completed!\n\nSuccess: {success}\nFailed: {failed}")
 
+# Handle photo input
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    
+    if user_id not in ADMIN_IDS or context.user_data.get('action') != 'photo':
+        return
+    
+    photo = update.message.photo[-1]
+    update_setting('bot_photo', photo.file_id)
+    context.user_data.clear()
+    await update.message.reply_text("✅ Photo updated successfully!")
+    await admin(update, context)
+
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     
@@ -280,8 +305,9 @@ def main():
     app.add_handler(CallbackQueryHandler(button_callback, pattern='^continue$'))
     app.add_handler(CallbackQueryHandler(admin_callback, pattern='^admin_'))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    print("✅ Bot is running with Broadcast & User Tracking...")
+    print("✅ Bot is running with Broadcast, User Tracking & Photo Change...")
     app.run_polling()
 
 if __name__ == '__main__':

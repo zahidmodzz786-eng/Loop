@@ -1,45 +1,45 @@
 import logging
 import os
 import sqlite3
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-from telegram.constants import ParseMode
 
 # Enable logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get environment variables
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-ADMIN_IDS = os.environ.get('ADMIN_IDS', '').split(',')  # Comma-separated admin Telegram user IDs
+ADMIN_IDS = os.environ.get('ADMIN_IDS', '').split(',')
 
-# Database setup
+# Database
 def init_db():
     conn = sqlite3.connect('bot_settings.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS settings
-                 (key TEXT PRIMARY KEY, value TEXT)''')
     
-    # Insert default values if table is empty
-    default_settings = [
-        ('button1_text', os.environ.get('BUTTON1_TEXT', 'Agent Link 1')),
-        ('button1_url', os.environ.get('BUTTON1_URL', 'https://t.me/your_channel1')),
-        ('button2_text', os.environ.get('BUTTON2_TEXT', 'Agent Link 2')),
-        ('button2_url', os.environ.get('BUTTON2_URL', 'https://t.me/your_channel2')),
-        ('continue_text', os.environ.get('CONTINUE_TEXT', 'Continue')),
-        ('bot_photo', os.environ.get('BOT_PHOTO', '')),
-        ('bot_message', os.environ.get('BOT_MESSAGE', '''Google Maps
-5 Star Rating + Review
-
-- Must Join All Channels To GET ₹180 + ₹200 AGENT
-- Process ~ After Joining Click Joined Button ✅
-- You Will Get Automatically NSE (₹180 + ₹200) Agent 😊!!'''))
+    # Settings table
+    c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)''')
+    
+    # Users table for tracking
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        user_id TEXT PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        joined_date TEXT
+    )''')
+    
+    defaults = [
+        ('button1_text', 'Agent Link 1'),
+        ('button1_url', 'https://t.me/your_channel1'),
+        ('button2_text', 'Agent Link 2'),
+        ('button2_url', 'https://t.me/your_channel2'),
+        ('continue_text', 'Continue'),
+        ('bot_photo', ''),
+        ('bot_message', 'Google Maps 5 Star Rating + Review\n\n- Must Join All Channels To GET ₹180 + ₹200 AGENT\n- Process ~ After Joining Click Joined Button ✅\n- You Will Get Automatically NSE (₹180 + ₹200) Agent 😊!!')
     ]
     
-    for key, value in default_settings:
+    for key, value in defaults:
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
     
     conn.commit()
@@ -60,22 +60,48 @@ def update_setting(key, value):
     conn.commit()
     conn.close()
 
-# Initialize database
+# User tracking functions
+def add_user(user_id, username, first_name):
+    conn = sqlite3.connect('bot_settings.db')
+    c = conn.cursor()
+    joined_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        c.execute("INSERT OR IGNORE INTO users (user_id, username, first_name, joined_date) VALUES (?, ?, ?, ?)",
+                  (str(user_id), username or "", first_name or "", joined_date))
+        conn.commit()
+    except:
+        pass
+    conn.close()
+
+def get_total_users():
+    conn = sqlite3.connect('bot_settings.db')
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users")
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
+def get_all_users():
+    conn = sqlite3.connect('bot_settings.db')
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM users")
+    users = c.fetchall()
+    conn.close()
+    return [user[0] for user in users]
+
 init_db()
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message with buttons when /start is issued."""
-    await send_main_message(update, context)
-
-async def send_main_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send the main message with buttons."""
-    # Get current settings from database
+# Start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Track user
+    user = update.effective_user
+    add_user(user.id, user.username, user.first_name)
+    
     button1_text = get_setting('button1_text')
     button1_url = get_setting('button1_url')
     button2_text = get_setting('button2_text')
     button2_url = get_setting('button2_url')
     continue_text = get_setting('continue_text')
-    bot_photo = get_setting('bot_photo')
     bot_message = get_setting('bot_message')
     
     keyboard = [
@@ -83,269 +109,180 @@ async def send_main_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         [InlineKeyboardButton(button2_text, url=button2_url)],
         [InlineKeyboardButton(continue_text, callback_data='continue')]
     ]
-    
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # Get chat_id
-    if update.callback_query:
-        chat_id = update.callback_query.message.chat_id
-        await update.callback_query.answer()
-        # Delete old message
-        try:
-            await update.callback_query.message.delete()
-        except:
-            pass
-    else:
-        chat_id = update.effective_chat.id
-    
-    # Send new message
-    try:
-        if bot_photo and bot_photo.strip():
-            await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=bot_photo,
-                caption=bot_message,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=bot_message,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
-    except Exception as e:
-        logger.error(f"Error sending message: {e}")
-        # Fallback to simple text
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=bot_message,
-            reply_markup=reply_markup
-        )
+    await update.message.reply_text(bot_message, reply_markup=reply_markup)
 
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle button callback queries."""
+# Continue button
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
     if query.data == 'continue':
-        await send_main_message(update, context)
+        button1_text = get_setting('button1_text')
+        button1_url = get_setting('button1_url')
+        button2_text = get_setting('button2_text')
+        button2_url = get_setting('button2_url')
+        continue_text = get_setting('continue_text')
+        bot_message = get_setting('bot_message')
+        
+        keyboard = [
+            [InlineKeyboardButton(button1_text, url=button1_url)],
+            [InlineKeyboardButton(button2_text, url=button2_url)],
+            [InlineKeyboardButton(continue_text, callback_data='continue')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.reply_text(bot_message, reply_markup=reply_markup)
 
-# Admin Commands
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin panel to change bot settings."""
+# Admin panel
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     
     if user_id not in ADMIN_IDS:
-        await update.message.reply_text("⛔ You are not authorized to use admin commands.")
+        await update.message.reply_text("⛔ Not authorized")
         return
+    
+    total_users = get_total_users()
     
     keyboard = [
         [InlineKeyboardButton("📝 Change Button 1", callback_data='admin_btn1')],
         [InlineKeyboardButton("📝 Change Button 2", callback_data='admin_btn2')],
-        [InlineKeyboardButton("🔄 Change Continue Button", callback_data='admin_continue')],
-        [InlineKeyboardButton("📷 Change Photo", callback_data='admin_photo')],
-        [InlineKeyboardButton("✏️ Change Message Text", callback_data='admin_text')],
-        [InlineKeyboardButton("👁️ View Current Settings", callback_data='admin_view')],
+        [InlineKeyboardButton("🔄 Change Continue", callback_data='admin_continue')],
+        [InlineKeyboardButton("✏️ Change Message", callback_data='admin_text')],
+        [InlineKeyboardButton("📊 Total Users", callback_data='admin_users')],
+        [InlineKeyboardButton("📢 Broadcast Message", callback_data='admin_broadcast')],
+        [InlineKeyboardButton("👁️ View Settings", callback_data='admin_view')],
         [InlineKeyboardButton("❌ Close", callback_data='admin_close')]
     ]
-    
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "⚙️ *Admin Panel*\n\nSelect what you want to change:",
-        reply_markup=reply_markup,
-        parse_mode=ParseMode.MARKDOWN
-    )
+    await update.message.reply_text(f"⚙️ *Admin Panel*\n\nTotal Users: {total_users}", 
+                                   reply_markup=reply_markup, 
+                                   parse_mode='Markdown')
 
-async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle admin panel callbacks."""
+# Admin callbacks
+async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = str(update.effective_user.id)
     
     if user_id not in ADMIN_IDS:
-        await query.answer("⛔ Unauthorized", show_alert=True)
+        await query.answer("⛔ Not authorized")
         return
     
     await query.answer()
     
     if query.data == 'admin_btn1':
-        context.user_data['admin_action'] = 'set_btn1_text'
-        await query.edit_message_text(
-            "📝 Send me the new text for *Button 1*:",
-            parse_mode=ParseMode.MARKDOWN
-        )
+        context.user_data['action'] = 'btn1_text'
+        await query.edit_message_text("📝 Send new text for Button 1:")
     
     elif query.data == 'admin_btn2':
-        context.user_data['admin_action'] = 'set_btn2_text'
-        await query.edit_message_text(
-            "📝 Send me the new text for *Button 2*:",
-            parse_mode=ParseMode.MARKDOWN
-        )
+        context.user_data['action'] = 'btn2_text'
+        await query.edit_message_text("📝 Send new text for Button 2:")
     
     elif query.data == 'admin_continue':
-        context.user_data['admin_action'] = 'set_continue_text'
-        await query.edit_message_text(
-            "🔄 Send me the new text for *Continue button*:",
-            parse_mode=ParseMode.MARKDOWN
-        )
-    
-    elif query.data == 'admin_photo':
-        context.user_data['admin_action'] = 'set_photo'
-        await query.edit_message_text(
-            "📷 Send me a new photo or a photo file_id:",
-            parse_mode=ParseMode.MARKDOWN
-        )
+        context.user_data['action'] = 'continue_text'
+        await query.edit_message_text("🔄 Send new text for Continue button:")
     
     elif query.data == 'admin_text':
-        context.user_data['admin_action'] = 'set_message'
-        await query.edit_message_text(
-            "✏️ Send me the new message text:",
-            parse_mode=ParseMode.MARKDOWN
-        )
+        context.user_data['action'] = 'message'
+        await query.edit_message_text("✏️ Send new message text:")
+    
+    elif query.data == 'admin_users':
+        total = get_total_users()
+        await query.edit_message_text(f"📊 *Total Users: {total}*", parse_mode='Markdown')
+    
+    elif query.data == 'admin_broadcast':
+        context.user_data['action'] = 'broadcast'
+        await query.edit_message_text("📢 Send the message you want to broadcast to all users:")
     
     elif query.data == 'admin_view':
-        settings_text = f"*Current Settings:*\n\n"
-        settings_text += f"*Button 1:* {get_setting('button1_text')}\n"
-        settings_text += f"*Button 1 URL:* {get_setting('button1_url')}\n"
-        settings_text += f"*Button 2:* {get_setting('button2_text')}\n"
-        settings_text += f"*Button 2 URL:* {get_setting('button2_url')}\n"
-        settings_text += f"*Continue:* {get_setting('continue_text')}\n"
-        settings_text += f"*Photo:* {'Set' if get_setting('bot_photo') else 'Not set'}\n"
-        settings_text += f"*Message:*\n{get_setting('bot_message')[:100]}..."
-        
-        keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data='admin_back')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            settings_text,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.MARKDOWN
-        )
-    
-    elif query.data == 'admin_back':
-        keyboard = [
-            [InlineKeyboardButton("📝 Change Button 1", callback_data='admin_btn1')],
-            [InlineKeyboardButton("📝 Change Button 2", callback_data='admin_btn2')],
-            [InlineKeyboardButton("🔄 Change Continue Button", callback_data='admin_continue')],
-            [InlineKeyboardButton("📷 Change Photo", callback_data='admin_photo')],
-            [InlineKeyboardButton("✏️ Change Message Text", callback_data='admin_text')],
-            [InlineKeyboardButton("👁️ View Current Settings", callback_data='admin_view')],
-            [InlineKeyboardButton("❌ Close", callback_data='admin_close')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            "⚙️ *Admin Panel*\n\nSelect what you want to change:",
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.MARKDOWN
-        )
+        text = f"*Current Settings:*\n\n"
+        text += f"*Button 1:* {get_setting('button1_text')}\n"
+        text += f"*URL 1:* {get_setting('button1_url')}\n\n"
+        text += f"*Button 2:* {get_setting('button2_text')}\n"
+        text += f"*URL 2:* {get_setting('button2_url')}\n\n"
+        text += f"*Continue:* {get_setting('continue_text')}\n\n"
+        text += f"*Message:*\n{get_setting('bot_message')[:100]}..."
+        await query.edit_message_text(text, parse_mode='Markdown')
     
     elif query.data == 'admin_close':
         await query.edit_message_text("✅ Admin panel closed.")
 
-async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text input from admin for settings changes."""
+# Handle admin input
+async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     
-    if user_id not in ADMIN_IDS or 'admin_action' not in context.user_data:
+    if user_id not in ADMIN_IDS or 'action' not in context.user_data:
         return
     
-    action = context.user_data['admin_action']
+    action = context.user_data['action']
     text = update.message.text
     
-    if action == 'set_btn1_text':
-        context.user_data['admin_action'] = 'set_btn1_url'
-        context.user_data['temp_btn1_text'] = text
-        await update.message.reply_text(
-            f"✅ Button 1 text set to: *{text}*\n\nNow send me the URL for Button 1:",
-            parse_mode=ParseMode.MARKDOWN
-        )
+    if action == 'btn1_text':
+        context.user_data['action'] = 'btn1_url'
+        context.user_data['temp_text'] = text
+        await update.message.reply_text(f"✅ Button 1 text set to: *{text}*\n\nNow send URL:", parse_mode='Markdown')
     
-    elif action == 'set_btn1_url':
-        update_setting('button1_text', context.user_data.get('temp_btn1_text', 'Agent Link 1'))
+    elif action == 'btn1_url':
+        update_setting('button1_text', context.user_data.get('temp_text', ''))
         update_setting('button1_url', text)
-        context.user_data.pop('temp_btn1_text', None)
-        context.user_data.pop('admin_action', None)
-        await update.message.reply_text(
-            f"✅ Button 1 updated!\n\nText: *{get_setting('button1_text')}*\nURL: *{get_setting('button1_url')}*",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        await admin_panel(update, context)
+        context.user_data.clear()
+        await update.message.reply_text("✅ Button 1 updated successfully!")
+        await admin(update, context)
     
-    elif action == 'set_btn2_text':
-        context.user_data['admin_action'] = 'set_btn2_url'
-        context.user_data['temp_btn2_text'] = text
-        await update.message.reply_text(
-            f"✅ Button 2 text set to: *{text}*\n\nNow send me the URL for Button 2:",
-            parse_mode=ParseMode.MARKDOWN
-        )
+    elif action == 'btn2_text':
+        context.user_data['action'] = 'btn2_url'
+        context.user_data['temp_text'] = text
+        await update.message.reply_text(f"✅ Button 2 text set to: *{text}*\n\nNow send URL:", parse_mode='Markdown')
     
-    elif action == 'set_btn2_url':
-        update_setting('button2_text', context.user_data.get('temp_btn2_text', 'Agent Link 2'))
+    elif action == 'btn2_url':
+        update_setting('button2_text', context.user_data.get('temp_text', ''))
         update_setting('button2_url', text)
-        context.user_data.pop('temp_btn2_text', None)
-        context.user_data.pop('admin_action', None)
-        await update.message.reply_text(
-            f"✅ Button 2 updated!\n\nText: *{get_setting('button2_text')}*\nURL: *{get_setting('button2_url')}*",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        await admin_panel(update, context)
+        context.user_data.clear()
+        await update.message.reply_text("✅ Button 2 updated successfully!")
+        await admin(update, context)
     
-    elif action == 'set_continue_text':
+    elif action == 'continue_text':
         update_setting('continue_text', text)
-        context.user_data.pop('admin_action', None)
-        await update.message.reply_text(
-            f"✅ Continue button text updated to: *{text}*",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        await admin_panel(update, context)
+        context.user_data.clear()
+        await update.message.reply_text("✅ Continue button updated successfully!")
+        await admin(update, context)
     
-    elif action == 'set_message':
+    elif action == 'message':
         update_setting('bot_message', text)
-        context.user_data.pop('admin_action', None)
-        await update.message.reply_text(
-            f"✅ Message text updated!",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        await admin_panel(update, context)
-
-async def handle_admin_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle photo input from admin."""
-    user_id = str(update.effective_user.id)
+        context.user_data.clear()
+        await update.message.reply_text("✅ Message updated successfully!")
+        await admin(update, context)
     
-    if user_id not in ADMIN_IDS or context.user_data.get('admin_action') != 'set_photo':
-        return
+    elif action == 'broadcast':
+        context.user_data.clear()
+        await update.message.reply_text("📢 Broadcasting message to all users...")
+        
+        # Get all users
+        users = get_all_users()
+        success = 0
+        failed = 0
+        
+        for user_id in users:
+            try:
+                await context.bot.send_message(chat_id=int(user_id), text=text)
+                success += 1
+            except:
+                failed += 1
+        
+        await update.message.reply_text(f"✅ Broadcast completed!\n\nSuccess: {success}\nFailed: {failed}")
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
     
-    if update.message.photo:
-        photo = update.message.photo[-1]
-        update_setting('bot_photo', photo.file_id)
-        await update.message.reply_text("✅ Photo updated successfully!")
-    elif update.message.text:
-        update_setting('bot_photo', update.message.text)
-        await update.message.reply_text("✅ Photo URL/file_id saved successfully!")
-    else:
-        await update.message.reply_text("❌ Please send a photo or a valid file_id/URL.")
-        return
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CallbackQueryHandler(button_callback, pattern='^continue$'))
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern='^admin_'))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
     
-    context.user_data.pop('admin_action', None)
-    await admin_panel(update, context)
-
-def main() -> None:
-    """Start the bot."""
-    # Create the Application
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # Register handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("admin", admin_panel))
-    application.add_handler(CallbackQueryHandler(button_callback, pattern='^continue$'))
-    application.add_handler(CallbackQueryHandler(admin_callback, pattern='^admin_'))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_input))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_admin_photo))
-
-    # Start the Bot
-    print("Bot started successfully! Press Ctrl+C to stop.")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    print("✅ Bot is running with Broadcast & User Tracking...")
+    app.run_polling()
 
 if __name__ == '__main__':
     main()

@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 # Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get environment variables
@@ -102,6 +102,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     button2_text = get_setting('button2_text')
     button2_url = get_setting('button2_url')
     continue_text = get_setting('continue_text')
+    bot_photo = get_setting('bot_photo')
     bot_message = get_setting('bot_message')
     
     keyboard = [
@@ -111,7 +112,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(bot_message, reply_markup=reply_markup)
+    # Send with photo if available
+    if bot_photo and bot_photo.strip():
+        try:
+            await update.message.reply_photo(
+                photo=bot_photo,
+                caption=bot_message,
+                reply_markup=reply_markup
+            )
+        except:
+            # Fallback to text if photo fails
+            await update.message.reply_text(bot_message, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(bot_message, reply_markup=reply_markup)
 
 # Continue button
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -124,6 +137,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         button2_text = get_setting('button2_text')
         button2_url = get_setting('button2_url')
         continue_text = get_setting('continue_text')
+        bot_photo = get_setting('bot_photo')
         bot_message = get_setting('bot_message')
         
         keyboard = [
@@ -133,7 +147,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.message.reply_text(bot_message, reply_markup=reply_markup)
+        # Send with photo if available
+        if bot_photo and bot_photo.strip():
+            try:
+                await query.message.reply_photo(
+                    photo=bot_photo,
+                    caption=bot_message,
+                    reply_markup=reply_markup
+                )
+            except:
+                # Fallback to text if photo fails
+                await query.message.reply_text(bot_message, reply_markup=reply_markup)
+        else:
+            await query.message.reply_text(bot_message, reply_markup=reply_markup)
 
 # Admin panel
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -259,12 +285,6 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Message updated successfully!")
         await admin(update, context)
     
-    elif action == 'photo':
-        update_setting('bot_photo', update.message.text)
-        context.user_data.clear()
-        await update.message.reply_text("✅ Photo URL/ID saved successfully!")
-        await admin(update, context)
-    
     elif action == 'broadcast':
         text = update.message.text
         context.user_data.clear()
@@ -294,7 +314,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
     update_setting('bot_photo', photo.file_id)
     context.user_data.clear()
-    await update.message.reply_text("✅ Photo updated successfully!")
+    await update.message.reply_text("✅ Photo updated successfully! It will now appear when users start the bot.")
     await admin(update, context)
 
 def main():
@@ -307,7 +327,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    print("✅ Bot is running with Broadcast, User Tracking & Photo Change...")
+    print("✅ Bot is running with Broadcast, User Tracking & Working Photo Display...")
     app.run_polling()
 
 if __name__ == '__main__':

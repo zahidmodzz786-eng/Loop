@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 # Enable logging
-logging.basicConfig(format='%(asime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get environment variables
@@ -117,14 +117,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await update.message.reply_photo(
                 photo=bot_photo,
-                caption=bot_message,
-                reply_markup=reply_markup
+                caption=f"<b>{bot_message}</b>",
+                reply_markup=reply_markup,
+                parse_mode='HTML'
             )
         except:
             # Fallback to text if photo fails
-            await update.message.reply_text(bot_message, reply_markup=reply_markup)
+            await update.message.reply_text(f"<b>{bot_message}</b>", reply_markup=reply_markup, parse_mode='HTML')
     else:
-        await update.message.reply_text(bot_message, reply_markup=reply_markup)
+        await update.message.reply_text(f"<b>{bot_message}</b>", reply_markup=reply_markup, parse_mode='HTML')
 
 # Continue button
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -152,14 +153,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.message.reply_photo(
                     photo=bot_photo,
-                    caption=bot_message,
-                    reply_markup=reply_markup
+                    caption=f"<b>{bot_message}</b>",
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
                 )
             except:
                 # Fallback to text if photo fails
-                await query.message.reply_text(bot_message, reply_markup=reply_markup)
+                await query.message.reply_text(f"<b>{bot_message}</b>", reply_markup=reply_markup, parse_mode='HTML')
         else:
-            await query.message.reply_text(bot_message, reply_markup=reply_markup)
+            await query.message.reply_text(f"<b>{bot_message}</b>", reply_markup=reply_markup, parse_mode='HTML')
 
 # Admin panel
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -297,7 +299,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         for user_id in users:
             try:
-                await context.bot.send_message(chat_id=int(user_id), text=text)
+                await context.bot.send_message(chat_id=int(user_id), text=text, parse_mode='HTML')
                 success += 1
             except:
                 failed += 1
